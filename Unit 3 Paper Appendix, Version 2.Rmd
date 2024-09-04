@@ -1,0 +1,75 @@
+---
+title: "Unit 3 Paper Appendix, Version 2"
+output:
+  html_document:
+    df_print: paged
+date: "2023-12-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r External Requirements, warning=FALSE}
+library(arm)
+library(boot)
+library(multcomp)
+library(tidyverse)
+data = read.csv("https://dept.stat.lsa.umich.edu/~bbh/s485/data/cfb_wl-2023-12-07.csv")
+```
+
+In this appendix we will be running a statistical analysis on the win-loss matrix describing all 2023 games among Division 1A teams up through week 12 (including week 0) and conference championship games. We will first be creating an ordinary Bradley-Terry model and a Bradley-Terry model that factors in home field advantage. We will then be using AIC to test which model offers a better representation of the underlying data. Next, we will fit an ordinary logistic regression and a Bayesian logistic regression. After that we will attempt to find the best model by comparing the estimations of generalization error found by running cross-validation. We will then compare the top 25 rankings found from our best model and those of the CFP committee. Lastly, we will attempt to see if Florida State is better than three other teams by comparing Bradley-Terry team strengths and by running a t-test with Bonferroni multiplicity correction.
+
+a.
+```{r a}
+btm = glm(home_win ~ . - week - UMass - 1, data = data)
+sort(coef(btm), decreasing=TRUE)[1:25]
+```
+
+The ranking of the above teams is according to the estimates reported by the Bradley-Terry model. The higher the estimate, the higher that team's strength. UMass is left out of the data set because they are the reference team, meaning that their estimate is 0.
+
+b.
+```{r b}
+btm_ha = glm(home_win ~ . - week - UMass, data = data[data$week != 14,])
+cat("AIC for Bradley-Terry Model:", AIC(btm), "\n")
+cat("AIC for Bradley-Terry Model with Home Field Advantage:", AIC(btm_ha), "\n")
+```
+
+The Bradley-Terry model with home field advantage achieves a lower AIC value than the Bradley-Terry model without home field advantage. This indicates the model with home field advantage offers a better representation of the underlying data when comparing the two.
+
+c.
+```{r c, warning=FALSE}
+olr_btm = glm(home_win ~ . - week - UMass - 1, family = "binomial", data = data)
+lr_btm = bayesglm(home_win ~ . - week - UMass - 1, family = "binomial", data = data)
+
+set.seed(100)
+cat("Cross-Validation Generalization Error Estimate for Bradley-Terry Model:", cv.glm(data, btm, K = 5)$delta[2], "\n")
+cat("Cross-Validation Generalization Error Estimate for Bradley-Terry Model with Home Field Advantage:", cv.glm(data[data$week != 14,], btm_ha, K = 5)$delta[2], "\n")
+cat("Cross-Validation Generalization Error Estimate for Ordinary Logistic Regression Model:", cv.glm(data, olr_btm, K = 5)$delta[2], "\n")
+cat("Cross-Validation Generalization Error Estimate for Logistic Regression Model:", cv.glm(data, lr_btm, K = 5)$delta[2], "\n")
+```
+
+The modeling routine that I prefer is the ordinary logistic regression model. This is because Bradley-Terry model with home field advantage uses a smaller data set, excluding high leverage games, meaning it may be less reliable. Furthermore, since the cross-validation generalization error estimate is essentially the same for both logistic regression models, we will move forward with the ordinary logistic regression Bradley-Terry model, since it is the simpler of the two choices.
+
+d.
+```{r d}
+sort(coef(olr_btm), decreasing=TRUE)[1:25]
+sort(coef(lr_btm), decreasing=TRUE)[1:25]
+```
+
+Fitting the model with a penalty does change the teams’ relative scores, as we can see that the orders differ between the two methods. When comparing the ordinary logistic regression model's top 25 rankings to that of the CFP committee, we can clearly see that Florida State is ranked above both Alabama and Texas in our model but not in the CFP rankings.
+
+e.
+
+i.
+```{r e.i}
+data.frame(as.list(sort(coef(olr_btm)[c("Florida.State", "Ohio.State", "Alabama", "Texas")], decreasing=TRUE)))
+```
+
+ii.
+```{r e.ii}
+glht(olr_btm, linfct = c('Florida.State - Texas == 0',
+                        'Florida.State - Ohio.State == 0',
+                        'Florida.State - Alabama == 0')) %>%
+summary()
+```
